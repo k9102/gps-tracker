@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>GPS Location Tracker</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -12,7 +16,38 @@
       background: #0f172a;
       color: #e2e8f0;
       min-height: 100vh;
+    }
+
+    /* --- Tabs --- */
+    .tabs {
       display: flex;
+      background: #1e293b;
+      border-bottom: 2px solid #334155;
+    }
+
+    .tab {
+      flex: 1;
+      padding: 14px;
+      text-align: center;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #64748b;
+      cursor: pointer;
+      border: none;
+      background: none;
+    }
+
+    .tab.active {
+      color: #38bdf8;
+      border-bottom: 2px solid #38bdf8;
+      margin-bottom: -2px;
+    }
+
+    .page { display: none; }
+    .page.active { display: flex; }
+
+    /* --- Tracker Page --- */
+    #tracker-page {
       flex-direction: column;
       align-items: center;
       padding: 24px 16px;
@@ -73,7 +108,7 @@
       color: #64748b;
     }
 
-    #btn {
+    .btn {
       margin-top: 8px;
       padding: 12px 32px;
       font-size: 1rem;
@@ -84,53 +119,149 @@
       cursor: pointer;
     }
 
-    #btn:active { background: #1d4ed8; }
-    #btn:disabled { background: #334155; color: #64748b; cursor: default; }
+    .btn:active { background: #1d4ed8; }
+
+    /* --- Map Page --- */
+    #map-page {
+      flex-direction: column;
+      height: calc(100vh - 50px);
+    }
+
+    .map-toolbar {
+      display: flex;
+      gap: 8px;
+      padding: 12px 16px;
+      background: #1e293b;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .map-toolbar select, .map-toolbar button {
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: 1px solid #334155;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+
+    .map-info {
+      margin-left: auto;
+      font-size: 0.8rem;
+      color: #94a3b8;
+    }
+
+    #map {
+      flex: 1;
+      width: 100%;
+    }
   </style>
 </head>
 <body>
-  <h1>GPS Location</h1>
-  <div id="status" class="status-waiting">Tap Start to begin tracking</div>
 
-  <div class="card">
-    <h2>Latitude</h2>
-    <div class="value" id="lat">--</div>
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="showPage('tracker')">Tracker</button>
+    <button class="tab" onclick="showPage('map')">Map</button>
   </div>
 
-  <div class="card">
-    <h2>Longitude</h2>
-    <div class="value" id="lon">--</div>
+  <!-- Tracker Page -->
+  <div id="tracker-page" class="page active">
+    <h1>GPS Location</h1>
+    <div id="status" class="status-waiting">Tap Start to begin tracking</div>
+
+    <div class="card">
+      <h2>Latitude</h2>
+      <div class="value" id="lat">--</div>
+    </div>
+
+    <div class="card">
+      <h2>Longitude</h2>
+      <div class="value" id="lon">--</div>
+    </div>
+
+    <div class="card">
+      <h2>Accuracy</h2>
+      <div class="value" id="acc">--</div>
+    </div>
+
+    <div class="card">
+      <h2>Altitude</h2>
+      <div class="value" id="alt">--</div>
+    </div>
+
+    <div class="card">
+      <h2>Speed</h2>
+      <div class="value" id="spd">--</div>
+    </div>
+
+    <div class="meta" id="timestamp" style="text-align:center;">Last update: --</div>
+    <div class="meta" id="log-count" style="text-align:center;">Points logged: 0</div>
+
+    <br>
+    <button class="btn" id="btn" onclick="toggle()">Start Tracking</button>
   </div>
 
-  <div class="card">
-    <h2>Accuracy</h2>
-    <div class="value" id="acc">--</div>
+  <!-- Map Page -->
+  <div id="map-page" class="page">
+    <div class="map-toolbar">
+      <select id="session-select">
+        <option value="">Select session...</option>
+      </select>
+      <button onclick="loadSession()">Load</button>
+      <button onclick="loadAllToday()">Today's paths</button>
+      <span class="map-info" id="map-info"></span>
+    </div>
+    <div id="map"></div>
   </div>
-
-  <div class="card">
-    <h2>Altitude</h2>
-    <div class="value" id="alt">--</div>
-  </div>
-
-  <div class="card">
-    <h2>Speed</h2>
-    <div class="value" id="spd">--</div>
-  </div>
-
-  <div class="meta" id="timestamp" style="text-align:center;">Last update: --</div>
-
-  <br>
-  <button id="btn" onclick="toggle()">Start Tracking</button>
 
   <script>
-    let watchId = null;
+    // --- Firebase Config ---
+    firebase.initializeApp({
+      apiKey: "AIzaSyA6PL3WIWGweHcWP828_7Gixtbabbfl1qQ",
+      authDomain: "gps-tracker-c7611.firebaseapp.com",
+      databaseURL: "https://gps-tracker-c7611-default-rtdb.firebaseio.com",
+      projectId: "gps-tracker-c7611",
+      storageBucket: "gps-tracker-c7611.firebasestorage.app"
+    });
 
+    const db = firebase.database();
     const $ = id => document.getElementById(id);
 
+    // --- Session ---
+    let sessionId = null;
+    let watchId = null;
+    let logCount = 0;
+
+    function newSession() {
+      const now = new Date();
+      const date = now.toISOString().slice(0, 10);
+      const time = now.toTimeString().slice(0, 8).replace(/:/g, '-');
+      sessionId = date + '_' + time;
+    }
+
+    // --- Tab switching ---
+    let map = null;
+    let mapReady = false;
+
+    function showPage(name) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      $(name + '-page').classList.add('active');
+      event.target.classList.add('active');
+
+      if (name === 'map') {
+        if (!mapReady) initMap();
+        setTimeout(() => map.invalidateSize(), 100);
+        loadSessionList();
+      }
+    }
+
+    // --- Tracker ---
     function setStatus(text, type) {
-      const el = $('status');
-      el.textContent = text;
-      el.className = 'status-' + type;
+      $('status').textContent = text;
+      $('status').className = 'status-' + type;
     }
 
     function update(pos) {
@@ -139,24 +270,33 @@
       $('lat').textContent = latitude.toFixed(6) + '\u00B0';
       $('lon').textContent = longitude.toFixed(6) + '\u00B0';
       $('acc').innerHTML = accuracy != null
-        ? accuracy.toFixed(1) + '<span class="unit">meters</span>'
-        : '--';
+        ? accuracy.toFixed(1) + '<span class="unit">meters</span>' : '--';
       $('alt').innerHTML = altitude != null
-        ? altitude.toFixed(1) + '<span class="unit">meters</span>'
-        : 'N/A';
+        ? altitude.toFixed(1) + '<span class="unit">meters</span>' : 'N/A';
       $('spd').innerHTML = speed != null
-        ? (speed * 3.6).toFixed(1) + '<span class="unit">km/h</span>'
-        : 'N/A';
+        ? (speed * 3.6).toFixed(1) + '<span class="unit">km/h</span>' : 'N/A';
 
       const time = new Date(pos.timestamp);
       $('timestamp').textContent = 'Last update: ' + time.toLocaleTimeString();
-
       setStatus('Tracking active', 'active');
+
+      // Log to Firebase
+      db.ref('sessions/' + sessionId).push({
+        lat: latitude,
+        lng: longitude,
+        accuracy: accuracy,
+        altitude: altitude,
+        speed: speed,
+        timestamp: pos.timestamp
+      });
+
+      logCount++;
+      $('log-count').textContent = 'Points logged: ' + logCount;
     }
 
     function onError(err) {
       const messages = {
-        1: 'Location permission denied. Please allow location access in your browser settings.',
+        1: 'Location permission denied. Please allow location access.',
         2: 'Position unavailable. Make sure GPS is enabled.',
         3: 'Location request timed out. Retrying...'
       };
@@ -171,9 +311,12 @@
         setStatus('Tracking stopped', 'waiting');
       } else {
         if (!navigator.geolocation) {
-          setStatus('Geolocation is not supported by this browser', 'error');
+          setStatus('Geolocation not supported', 'error');
           return;
         }
+        newSession();
+        logCount = 0;
+        $('log-count').textContent = 'Points logged: 0';
         setStatus('Acquiring location...', 'waiting');
         $('btn').textContent = 'Stop Tracking';
         watchId = navigator.geolocation.watchPosition(update, onError, {
@@ -182,6 +325,109 @@
           timeout: 10000
         });
       }
+    }
+
+    // --- Map ---
+    let pathLayer = null;
+
+    function initMap() {
+      map = L.map('map').setView([0, 0], 2);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 19
+      }).addTo(map);
+      pathLayer = L.layerGroup().addTo(map);
+      mapReady = true;
+    }
+
+    function loadSessionList() {
+      const sel = $('session-select');
+      sel.innerHTML = '<option value="">Select session...</option>';
+
+      db.ref('sessions').once('value', snap => {
+        const data = snap.val();
+        if (!data) return;
+        const keys = Object.keys(data).sort().reverse();
+        keys.forEach(key => {
+          const label = key.replace('_', ' ');
+          sel.innerHTML += '<option value="' + key + '">' + label + '</option>';
+        });
+      });
+    }
+
+    function drawPath(points, color) {
+      if (points.length === 0) return;
+
+      const latlngs = points.map(p => [p.lat, p.lng]);
+
+      // Draw polyline
+      L.polyline(latlngs, { color: color, weight: 4, opacity: 0.8 }).addTo(pathLayer);
+
+      // Start marker (green)
+      L.circleMarker(latlngs[0], {
+        radius: 8, color: '#22c55e', fillColor: '#22c55e', fillOpacity: 1
+      }).bindPopup('Start: ' + new Date(points[0].timestamp).toLocaleTimeString())
+        .addTo(pathLayer);
+
+      // End marker (red)
+      L.circleMarker(latlngs[latlngs.length - 1], {
+        radius: 8, color: '#ef4444', fillColor: '#ef4444', fillOpacity: 1
+      }).bindPopup('End: ' + new Date(points[points.length - 1].timestamp).toLocaleTimeString())
+        .addTo(pathLayer);
+
+      return latlngs;
+    }
+
+    function loadSession() {
+      const key = $('session-select').value;
+      if (!key) return;
+
+      pathLayer.clearLayers();
+
+      db.ref('sessions/' + key).once('value', snap => {
+        const data = snap.val();
+        if (!data) {
+          $('map-info').textContent = 'No data for this session';
+          return;
+        }
+
+        const points = Object.values(data).sort((a, b) => a.timestamp - b.timestamp);
+        const latlngs = drawPath(points, '#3b82f6');
+
+        if (latlngs && latlngs.length > 0) {
+          map.fitBounds(L.latLngBounds(latlngs).pad(0.2));
+        }
+        $('map-info').textContent = points.length + ' points';
+      });
+    }
+
+    function loadAllToday() {
+      const today = new Date().toISOString().slice(0, 10);
+      pathLayer.clearLayers();
+
+      const colors = ['#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#ec4899'];
+      let allLatLngs = [];
+      let totalPoints = 0;
+
+      db.ref('sessions').once('value', snap => {
+        const data = snap.val();
+        if (!data) return;
+
+        const todayKeys = Object.keys(data).filter(k => k.startsWith(today));
+        todayKeys.sort();
+
+        todayKeys.forEach((key, i) => {
+          const points = Object.values(data[key]).sort((a, b) => a.timestamp - b.timestamp);
+          const latlngs = drawPath(points, colors[i % colors.length]);
+          if (latlngs) allLatLngs = allLatLngs.concat(latlngs);
+          totalPoints += points.length;
+        });
+
+        if (allLatLngs.length > 0) {
+          map.fitBounds(L.latLngBounds(allLatLngs).pad(0.2));
+        }
+        $('map-info').textContent = todayKeys.length + ' sessions, ' + totalPoints + ' points';
+      });
     }
   </script>
 </body>
