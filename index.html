@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GPS Location Tracker</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 24px;
+      color: #38bdf8;
+    }
+
+    #status {
+      font-size: 0.95rem;
+      padding: 10px 20px;
+      border-radius: 8px;
+      margin-bottom: 24px;
+      text-align: center;
+    }
+
+    .status-waiting { background: #1e293b; color: #94a3b8; }
+    .status-active  { background: #064e3b; color: #6ee7b7; }
+    .status-error   { background: #450a0a; color: #fca5a5; }
+
+    .card {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 20px;
+      width: 100%;
+      max-width: 400px;
+      margin-bottom: 16px;
+    }
+
+    .card h2 {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #64748b;
+      margin-bottom: 12px;
+    }
+
+    .value {
+      font-size: 1.8rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: #f1f5f9;
+      word-break: break-all;
+    }
+
+    .unit {
+      font-size: 0.85rem;
+      color: #64748b;
+      margin-left: 4px;
+    }
+
+    .meta {
+      margin-top: 8px;
+      font-size: 0.8rem;
+      color: #64748b;
+    }
+
+    #btn {
+      margin-top: 8px;
+      padding: 12px 32px;
+      font-size: 1rem;
+      border: none;
+      border-radius: 8px;
+      background: #2563eb;
+      color: #fff;
+      cursor: pointer;
+    }
+
+    #btn:active { background: #1d4ed8; }
+    #btn:disabled { background: #334155; color: #64748b; cursor: default; }
+  </style>
+</head>
+<body>
+  <h1>GPS Location</h1>
+  <div id="status" class="status-waiting">Tap Start to begin tracking</div>
+
+  <div class="card">
+    <h2>Latitude</h2>
+    <div class="value" id="lat">--</div>
+  </div>
+
+  <div class="card">
+    <h2>Longitude</h2>
+    <div class="value" id="lon">--</div>
+  </div>
+
+  <div class="card">
+    <h2>Accuracy</h2>
+    <div class="value" id="acc">--</div>
+  </div>
+
+  <div class="card">
+    <h2>Altitude</h2>
+    <div class="value" id="alt">--</div>
+  </div>
+
+  <div class="card">
+    <h2>Speed</h2>
+    <div class="value" id="spd">--</div>
+  </div>
+
+  <div class="meta" id="timestamp" style="text-align:center;">Last update: --</div>
+
+  <br>
+  <button id="btn" onclick="toggle()">Start Tracking</button>
+
+  <script>
+    let watchId = null;
+
+    const $ = id => document.getElementById(id);
+
+    function setStatus(text, type) {
+      const el = $('status');
+      el.textContent = text;
+      el.className = 'status-' + type;
+    }
+
+    function update(pos) {
+      const { latitude, longitude, accuracy, altitude, speed } = pos.coords;
+
+      $('lat').textContent = latitude.toFixed(6) + '\u00B0';
+      $('lon').textContent = longitude.toFixed(6) + '\u00B0';
+      $('acc').innerHTML = accuracy != null
+        ? accuracy.toFixed(1) + '<span class="unit">meters</span>'
+        : '--';
+      $('alt').innerHTML = altitude != null
+        ? altitude.toFixed(1) + '<span class="unit">meters</span>'
+        : 'N/A';
+      $('spd').innerHTML = speed != null
+        ? (speed * 3.6).toFixed(1) + '<span class="unit">km/h</span>'
+        : 'N/A';
+
+      const time = new Date(pos.timestamp);
+      $('timestamp').textContent = 'Last update: ' + time.toLocaleTimeString();
+
+      setStatus('Tracking active', 'active');
+    }
+
+    function onError(err) {
+      const messages = {
+        1: 'Location permission denied. Please allow location access in your browser settings.',
+        2: 'Position unavailable. Make sure GPS is enabled.',
+        3: 'Location request timed out. Retrying...'
+      };
+      setStatus(messages[err.code] || 'Unknown error', 'error');
+    }
+
+    function toggle() {
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+        $('btn').textContent = 'Start Tracking';
+        setStatus('Tracking stopped', 'waiting');
+      } else {
+        if (!navigator.geolocation) {
+          setStatus('Geolocation is not supported by this browser', 'error');
+          return;
+        }
+        setStatus('Acquiring location...', 'waiting');
+        $('btn').textContent = 'Stop Tracking';
+        watchId = navigator.geolocation.watchPosition(update, onError, {
+          enableHighAccuracy: true,
+          maximumAge: 0,
+          timeout: 10000
+        });
+      }
+    }
+  </script>
+</body>
+</html>
