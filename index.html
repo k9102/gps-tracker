@@ -198,6 +198,7 @@
 
     <div class="meta" id="timestamp" style="text-align:center;">Last update: --</div>
     <div class="meta" id="log-count" style="text-align:center;">Points logged: 0</div>
+    <div class="meta" id="db-status" style="text-align:center; color: #94a3b8;">Firebase: not connected</div>
 
     <br>
     <button class="btn" id="btn" onclick="toggle()">Start Tracking</button>
@@ -288,10 +289,15 @@
         altitude: altitude,
         speed: speed,
         timestamp: pos.timestamp
+      }).then(() => {
+        logCount++;
+        $('log-count').textContent = 'Points logged: ' + logCount;
+        $('db-status').textContent = 'Firebase: connected';
+        $('db-status').style.color = '#6ee7b7';
+      }).catch(err => {
+        $('db-status').textContent = 'Firebase error: ' + err.message;
+        $('db-status').style.color = '#fca5a5';
       });
-
-      logCount++;
-      $('log-count').textContent = 'Points logged: ' + logCount;
     }
 
     function onError(err) {
